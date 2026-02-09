@@ -1,5 +1,7 @@
 # 百度云 CDN 证书清理工具
 
+[![Build and Release](https://github.com/alex1528/bce-cert-cleaner/actions/workflows/build.yml/badge.svg)](https://github.com/alex1528/bce-cert-cleaner/actions/workflows/build.yml)
+[![CodeQL](https://github.com/alex1528/bce-cert-cleaner/actions/workflows/codeql.yml/badge.svg)](https://github.com/alex1528/bce-cert-cleaner/actions/workflows/codeql.yml)
 ![Go Version](https://img.shields.io/badge/Go-%3E%3D1.18-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
@@ -50,21 +52,41 @@ export BCE_SECRET_KEY="your-secret-key"
 
 ## 安装
 
-### 方式一：源码编译
+### 方式一：直接下载二进制（推荐）
+
+从 [Releases](https://github.com/alex1528/bce-cert-cleaner/releases) 页面下载对应平台的二进制文件：
+
+#### Linux / macOS
+
+```bash
+# 以 Linux amd64 为例，下载最新版本
+VERSION=$(curl -s https://api.github.com/repos/alex1528/bce-cert-cleaner/releases/latest | grep tag_name | cut -d '"' -f 4)
+curl -LO https://github.com/alex1528/bce-cert-cleaner/releases/download/${VERSION}/bce-cert-cleaner-linux-amd64
+
+# 验证校验和
+curl -LO https://github.com/alex1528/bce-cert-cleaner/releases/download/${VERSION}/bce-cert-cleaner-linux-amd64.sha256
+sha256sum -c bce-cert-cleaner-linux-amd64.sha256
+
+# 添加执行权限
+chmod +x bce-cert-cleaner-linux-amd64
+
+# 移动到系统路径
+sudo mv bce-cert-cleaner-linux-amd64 /usr/local/bin/bce-cert-cleaner
+```
+
+#### Windows
+
+1. 访问 [Releases](https://github.com/alex1528/bce-cert-cleaner/releases) 页面
+2. 下载 `bce-cert-cleaner-windows-amd64.exe`
+3. 重命名为 `bce-cert-cleaner.exe` 并添加到系统 PATH
+
+### 方式二：源码编译
 
 ```bash
 git clone https://github.com/alex1528/bce-cert-cleaner.git
 cd bce-cert-cleaner
 go mod tidy
 go build -o bce-cert-cleaner
-```
-
-### 方式二：直接下载二进制
-
-```bash
-# 将编译好的二进制放到系统路径
-sudo cp bce-cert-cleaner /usr/local/bin/
-sudo chmod +x /usr/local/bin/bce-cert-cleaner
 ```
 
 ## 参数说明

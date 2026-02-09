@@ -1,0 +1,238 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  # 代码质量检查和测试
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.18'
+
+      - name: Go mod verify
+        run: go mod verify
+
+      - name: Go mod download
+        run: go mod download
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run go fmt
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "Code is not formatted. Please run 'go fmt ./...'"
+            gofmt -s -d .
+            exit 1
+          fi
+
+      - name: Build test
+        run: go build -v ./...
+
+  # 多平台构建
+  build:
+    name: Build
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # Linux
+          - goos: linux
+            goarch: amd64
+            output: bce-cert-cleaner-linux-amd64
+          - goos: linux
+            goarch: arm64
+            output: bce-cert-cleaner-linux-arm64
+          # macOS
+          - goos: darwin
+            goarch: amd64
+            output: bce-cert-cleaner-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            output: bce-cert-cleaner-darwin-arm64
+          # Windows
+          - goos: windows
+            goarch: amd64
+            output: bce-cert-cleaner-windows-amd64.exe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.18'
+
+      - name: Get version
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+          fi
+          BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          go build \
+            -trimpath \
+            -ldflags "-s -w -X 'main.version=${{ steps.version.outputs.version }}' -X 'main.buildTime=${{ steps.version.outputs.build_time }}'" \
+            -o ${{ matrix.output }} \
+            .
+
+      - name: Calculate checksum
+        run: |
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then
+            sha256sum ${{ matrix.output }} > ${{ matrix.output }}.sha256
+          else
+            sha256sum ${{ matrix.output }} > ${{ matrix.output }}.sha256
+            chmod +x ${{ matrix.output }}
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: |
+            ${{ matrix.output }}
+            ${{ matrix.output }}.sha256
+
+  # 创建 Release（仅在推送 tag 时）
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Display structure of downloaded files
+        run: ls -R dist/
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find dist -type f \( -name "bce-cert-cleaner-*" -o -name "*.sha256" \) -exec cp {} release/ \;
+          ls -lh release/
+
+      - name: Create release notes
+        id: release_notes
+        run: |
+          cat > release_notes.md << 'EOF'
+          ## 百度云 CDN 证书清理工具
+
+          ### 功能特性
+          - ✅ 列出所有 SSL 证书及其状态
+          - ✅ 自动检测 CDN 域名中正在使用的证书
+          - ✅ 支持批量确认、逐个确认、自动删除三种模式
+          - ✅ 支持模拟运行和日志记录
+          - ✅ 跨平台支持（Windows/macOS/Linux）
+
+          ### 下载说明
+
+          请根据您的操作系统下载对应的二进制文件：
+
+          **Linux:**
+          - `bce-cert-cleaner-linux-amd64` - Linux x86_64
+          - `bce-cert-cleaner-linux-arm64` - Linux ARM64
+
+          **macOS:**
+          - `bce-cert-cleaner-darwin-amd64` - macOS Intel
+          - `bce-cert-cleaner-darwin-arm64` - macOS Apple Silicon (M1/M2)
+
+          **Windows:**
+          - `bce-cert-cleaner-windows-amd64.exe` - Windows 64-bit
+
+          ### 安装方法
+
+          #### Linux / macOS
+
+          ```bash
+          # 下载（以 Linux amd64 为例）
+          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/bce-cert-cleaner-linux-amd64
+
+          # 验证校验和
+          curl -LO https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/bce-cert-cleaner-linux-amd64.sha256
+          sha256sum -c bce-cert-cleaner-linux-amd64.sha256
+
+          # 添加执行权限
+          chmod +x bce-cert-cleaner-linux-amd64
+
+          # 移动到系统路径（可选）
+          sudo mv bce-cert-cleaner-linux-amd64 /usr/local/bin/bce-cert-cleaner
+          ```
+
+          #### Windows
+
+          1. 下载 `bce-cert-cleaner-windows-amd64.exe`
+          2. 重命名为 `bce-cert-cleaner.exe`
+          3. 将其添加到系统 PATH 或直接运行
+
+          ### 快速开始
+
+          ```bash
+          # 设置环境变量
+          export BCE_ACCESS_KEY="your-access-key"
+          export BCE_SECRET_KEY="your-secret-key"
+
+          # 查看所有证书
+          bce-cert-cleaner -list-all
+
+          # 模拟运行
+          bce-cert-cleaner -dry-run
+
+          # 交互式删除
+          bce-cert-cleaner -interactive
+          ```
+
+          ### 校验和
+
+          所有二进制文件都提供了 SHA256 校验和文件（`.sha256` 后缀）。
+
+          ---
+
+          **完整文档**: https://github.com/${{ github.repository }}
+          EOF
+          cat release_notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ github.ref_name }}
+          body_path: release_notes.md
+          files: release/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
