@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(go build:*)",
-      "Bash(./bce-cert-cleaner.exe:*)"
+      "Bash(./bce-cert-cleaner.exe:*)",
+      "Bash(git check-ignore:*)"
     ]
   }
 }
